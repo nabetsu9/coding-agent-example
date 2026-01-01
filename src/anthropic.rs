@@ -1,6 +1,12 @@
 use anyhow::{bail, Context, Result};
+use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use tracing::{debug, info};
+
+#[async_trait]
+pub trait ToolHandler: Send + Sync {
+    async fn execute(&self, input: serde_json::Value) -> Result<ToolResult>;
+}
 
 /// メッセージの内容（文字列 or ブロック配列）
 #[derive(Debug, Clone, Serialize, Deserialize)]
