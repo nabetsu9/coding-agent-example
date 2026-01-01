@@ -16,6 +16,8 @@ struct MessageRequest {
     model: String,
     max_tokens: u32,
     messages: Vec<Message>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    tools: Option<Vec<Tool>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -79,6 +81,23 @@ pub struct Usage {
     pub output_tokens: u32,
 }
 
+/// Tool definition for the API
+#[derive(Debug, Clone, Serialize)]
+pub struct Tool {
+    pub name: String,
+    pub description: String,
+    pub input_schema: serde_json::Value,
+}
+
+/// ツール実行結果
+/// どちらか一方のみ設定される
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ToolResult {
+    pub content: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+}
+
 /// Anthropic API client
 pub struct AnthropicClient {
     api_key: String,
@@ -109,6 +128,7 @@ impl AnthropicClient {
             model: model.to_string(),
             max_tokens,
             messages: vec![Message::user_text(user_message)],
+            tools: None,
         };
 
         let response = self
