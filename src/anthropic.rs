@@ -2,6 +2,14 @@ use anyhow::{bail, Context, Result};
 use serde::{Deserialize, Serialize};
 use tracing::{debug, info};
 
+/// メッセージの内容（文字列 or ブロック配列）
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum MessageContent {
+    Text(String),
+    Blocks(Vec<ContentBlock>),
+}
+
 /// Request structure for Messages API
 #[derive(Debug, Serialize)]
 struct MessageRequest {
@@ -10,15 +18,32 @@ struct MessageRequest {
     messages: Vec<Message>,
 }
 
-#[derive(Debug, Serialize)]
-struct Message {
-    role: String,
-    content: String,
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Message {
+    pub role: String, // "user" または "assistant"
+    pub content: MessageContent,
+}
+
+impl Message {
+    /// テキストメッセージを作成（便利メソッド）
+    pub fn user_text(text: impl Into<String>) -> Self {
+        Self {
+            role: "user".to_string(),
+            content: MessageContent::Text(text.into()),
+        }
+    }
+
+    pub fn assistant_text(text: impl Into<String>) -> Self {
+        Self {
+            role: "assistant".to_string(),
+            content: MessageContent::Text(text.into()),
+        }
+    }
 }
 
 /// Response structure
 #[derive(Debug, Deserialize)]
-#[allow(dead_code)]  // API response fields - not all are currently used
+#[allow(dead_code)] // API response fields - not all are currently used
 pub struct MessageResponse {
     pub id: String,
     pub content: Vec<ContentBlock>,
@@ -26,12 +51,26 @@ pub struct MessageResponse {
     pub usage: Usage,
 }
 
-#[derive(Debug, Deserialize)]
-pub struct ContentBlock {
-    // `type` はRustの予約語なので `content_type` という名前にして、JSON上では `"type"` として扱う
-    #[serde(rename = "type")]
-    pub content_type: String,
-    pub text: String,
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type")]
+pub enum ContentBlock {
+    #[serde(rename = "text")]
+    Text { text: String },
+
+    #[serde(rename = "tool_use")]
+    ToolUse {
+        id: String,
+        name: String,
+        input: serde_json::Value,
+    },
+
+    #[serde(rename = "tool_result")]
+    ToolResult {
+        tool_use_id: String,
+        content: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        is_error: Option<bool>,
+    },
 }
 
 #[derive(Debug, Deserialize)]
@@ -69,10 +108,7 @@ impl AnthropicClient {
         let request = MessageRequest {
             model: model.to_string(),
             max_tokens,
-            messages: vec![Message {
-                role: "user".to_string(),
-                content: user_message.to_string(),
-            }],
+            messages: vec![Message::user_text(user_message)],
         };
 
         let response = self

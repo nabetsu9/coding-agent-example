@@ -2,6 +2,7 @@ use anyhow::{Context, Result};
 use clap::Parser;
 use dotenvy::dotenv;
 mod anthropic;
+use crate::anthropic::ContentBlock;
 use anthropic::AnthropicClient;
 
 /// Anthropic Claude CLI Agent
@@ -55,8 +56,11 @@ async fn main() -> Result<()> {
         .context("Failed to communicate with Claude API")?;
 
     for content in &response.content {
-        if content.content_type == "text" {
-            println!("{}", content.text);
+        // if content.content_type == "text" {
+        //     println!("{}", content.text);
+        // }
+        if let ContentBlock::Text { text } = content {
+            println!("{}", text)
         }
     }
 
