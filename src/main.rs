@@ -2,8 +2,10 @@ use anyhow::{Context, Result};
 use clap::Parser;
 use dotenvy::dotenv;
 mod anthropic;
+mod tools;
 use crate::anthropic::ContentBlock;
 use anthropic::AnthropicClient;
+use tools::ReadFileTool;
 
 /// Anthropic Claude CLI Agent
 #[derive(Parser, Debug)]
