@@ -35,6 +35,7 @@ pub struct Message {
 
 impl Message {
     /// テキストメッセージを作成（便利メソッド）
+    #[allow(dead_code)]
     pub fn user_text(text: impl Into<String>) -> Self {
         Self {
             role: "user".to_string(),
@@ -42,6 +43,7 @@ impl Message {
         }
     }
 
+    #[allow(dead_code)]
     pub fn assistant_text(text: impl Into<String>) -> Self {
         Self {
             role: "assistant".to_string(),
@@ -122,6 +124,7 @@ impl AnthropicClient {
         }
     }
     /// Send a message to Claude (non-streaming)
+    #[allow(dead_code)]
     pub async fn create_message(
         &self,
         model: &str,
@@ -218,6 +221,103 @@ impl AnthropicClient {
 
         Ok(message_response)
     }
+
+    /// ツールを使った会話（Agentic Loop）
+    pub async fn execute_with_tools(
+        &self,
+        model: &str,
+        max_tokens: u32,
+        user_message: &str,
+        tool_registry: &ToolRegistry,
+        max_iterations: usize,
+    ) -> Result<ConversationResult> {
+        // 会話履歴を初期化
+        let mut conversation = vec![Message {
+            role: "user".to_string(),
+            content: MessageContent::Text(user_message.to_string()),
+        }];
+
+        // 最大反復回数までループ
+        for iteration in 0..max_iterations {
+            info!("Iteration {}/{}", iteration + 1, max_iterations);
+
+            // APIを呼び出す
+            let response = self
+                .create_message_with_tools(
+                    model,
+                    max_tokens,
+                    conversation.clone(),
+                    Some(tool_registry.get_schemas()),
+                )
+                .await?;
+
+            // アシスタントのメッセージを会話履歴に追加
+            conversation.push(Message {
+                role: "assistant".to_string(),
+                content: MessageContent::Blocks(response.content.clone()),
+            });
+
+            // stop_reason をチェック
+            if response.stop_reason.as_deref() != Some("tool_use") {
+                // ツール使用がない → 最終応答
+                info!("Conversation completed in {} iterations", iteration + 1);
+                return Ok(ConversationResult {
+                    response,
+                    conversation,
+                    iterations: iteration + 1,
+                });
+            }
+
+            // ツールを実行
+            info!("Executing tools...");
+            let tool_results = self.execute_tools(&response.content, tool_registry).await?;
+
+            // ツール結果を会話履歴に追加
+            conversation.push(Message {
+                role: "user".to_string(),
+                content: MessageContent::Blocks(tool_results),
+            });
+        }
+
+        // 最大反復回数に到達
+        bail!(
+            "Max iterations ({}) reached without final response",
+            max_iterations
+        );
+    }
+
+    /// content blocks からツールを抽出して実行
+    async fn execute_tools(
+        &self,
+        content_blocks: &[ContentBlock],
+        tool_registry: &ToolRegistry,
+    ) -> Result<Vec<ContentBlock>> {
+        let mut results = Vec::new();
+
+        for block in content_blocks {
+            if let ContentBlock::ToolUse { id, name, input } = block {
+                info!("Executing tool: {}", name);
+
+                // ツールを実行
+                let result = tool_registry.execute(name, input.clone()).await?;
+
+                // 結果を JSON にシリアライズ
+                let content =
+                    serde_json::to_string(&result).context("Failed to serialize tool result")?;
+
+                // tool_result block を作成
+                results.push(ContentBlock::ToolResult {
+                    tool_use_id: id.clone(),
+                    content,
+                    is_error: result.error.as_ref().map(|_| true),
+                });
+
+                info!("Tool '{}' executed successfully", name);
+            }
+        }
+
+        Ok(results)
+    }
 }
 
 /// ツールのレジストリ（登録・管理・実行）
@@ -256,4 +356,12 @@ impl ToolRegistry {
 
         handler.execute(input).await
     }
+}
+
+/// 会話の結果（ツール実行を含む）
+pub struct ConversationResult {
+    pub response: MessageResponse,
+    #[allow(dead_code)]
+    pub conversation: Vec<Message>,
+    pub iterations: usize,
 }

@@ -1,10 +1,9 @@
-use anyhow::{Context, Result};
+use anyhow::Result;
 use clap::Parser;
 use dotenvy::dotenv;
 mod anthropic;
 mod tools;
-use crate::anthropic::ContentBlock;
-use anthropic::AnthropicClient;
+use anthropic::{AnthropicClient, ContentBlock, ToolRegistry};
 use tools::ReadFileTool;
 
 /// Anthropic Claude CLI Agent
@@ -26,6 +25,10 @@ struct Args {
     /// Maximum tokens to generate
     #[arg(long, default_value = "1024")]
     max_tokens: u32,
+
+    /// Maximum tool use iterations
+    #[arg(long, default_value = "5")]
+    max_iterations: usize,
 }
 
 #[tokio::main]
@@ -52,26 +55,34 @@ async fn main() -> Result<()> {
 
     let client = AnthropicClient::new(args.api_key);
 
-    let response = client
-        .create_message(&args.model, args.max_tokens, &args.message)
-        .await
-        .context("Failed to communicate with Claude API")?;
+    // ToolRegistry の作成
+    let mut tool_registry = ToolRegistry::new();
+    tool_registry.register(ReadFileTool::schema(), ReadFileTool::new());
 
-    for content in &response.content {
-        // if content.content_type == "text" {
-        //     println!("{}", content.text);
-        // }
-        if let ContentBlock::Text { text } = content {
-            println!("{}", text)
+    // ツールを使った会話を実行
+    let result = client
+        .execute_with_tools(
+            &args.model,
+            args.max_tokens,
+            &args.message,
+            &tool_registry,
+            args.max_iterations,
+        )
+        .await?;
+
+    // レスポンスの表示
+    println!("\n--- Claude's Response ---");
+    for block in &result.response.content {
+        if let ContentBlock::Text { text } = block {
+            println!("{}", text);
         }
     }
 
-    // トークン使用量の表示
-    tracing::info!(
-        "Tokens used: {} input, {} output",
-        response.usage.input_tokens,
-        response.usage.output_tokens
-    );
+    // メタデータの表示
+    println!("\n--- Metadata ---");
+    println!("Iterations: {}", result.iterations);
+    println!("Input tokens: {}", result.response.usage.input_tokens);
+    println!("Output tokens: {}", result.response.usage.output_tokens);
 
     Ok(())
 }
