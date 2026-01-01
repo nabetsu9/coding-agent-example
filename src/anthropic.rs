@@ -1,6 +1,7 @@
 use anyhow::{bail, Context, Result};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use tracing::{debug, info};
 
 #[async_trait]
@@ -164,5 +165,95 @@ impl AnthropicClient {
         info!("Successfully received response from Claude");
 
         Ok(message_response)
+    }
+
+    /// ツールをサポートしたメッセージ作成
+    pub async fn create_message_with_tools(
+        &self,
+        model: &str,
+        max_tokens: u32,
+        messages: Vec<Message>,
+        tools: Option<Vec<Tool>>,
+    ) -> Result<MessageResponse> {
+        debug!("Preparing request to Anthropic API with tools");
+        debug!(
+            ?model,
+            ?max_tokens,
+            messages_count = messages.len(),
+            "Request parameters"
+        );
+
+        let request = MessageRequest {
+            model: model.to_string(),
+            max_tokens,
+            messages,
+            tools,
+        };
+
+        let response = self
+            .client
+            .post(format!("{}/messages", self.base_url))
+            .header("x-api-key", &self.api_key)
+            .header("anthropic-version", "2023-06-01")
+            .header("content-type", "application/json")
+            .json(&request)
+            .send()
+            .await
+            .context("Failed to send request to Anthropic API")?;
+
+        let status = response.status();
+        debug!(?status, "Received response from Anthropic API");
+
+        if !status.is_success() {
+            let error_text = response.text().await.unwrap_or_default();
+            bail!("API request failed with status {}: {}", status, error_text);
+        }
+
+        let message_response = response
+            .json::<MessageResponse>()
+            .await
+            .context("Failed to parse API response")?;
+
+        info!("Successfully received response from Claude");
+
+        Ok(message_response)
+    }
+}
+
+/// ツールのレジストリ（登録・管理・実行）
+pub struct ToolRegistry {
+    tools: HashMap<String, Box<dyn ToolHandler>>,
+    schemas: Vec<Tool>,
+}
+
+impl ToolRegistry {
+    /// 新しいレジストリを作成
+    pub fn new() -> Self {
+        Self {
+            tools: HashMap::new(),
+            schemas: Vec::new(),
+        }
+    }
+
+    /// ツールを登録
+    pub fn register<T: ToolHandler + 'static>(&mut self, schema: Tool, handler: T) {
+        let name = schema.name.clone();
+        self.schemas.push(schema);
+        self.tools.insert(name, Box::new(handler));
+    }
+
+    /// 登録されているツールのスキーマ一覧を取得
+    pub fn get_schemas(&self) -> Vec<Tool> {
+        self.schemas.clone()
+    }
+
+    /// ツールを実行
+    pub async fn execute(&self, name: &str, input: serde_json::Value) -> Result<ToolResult> {
+        let handler = self
+            .tools
+            .get(name)
+            .ok_or_else(|| anyhow::anyhow!("Tool not found: {}", name))?;
+
+        handler.execute(input).await
     }
 }
