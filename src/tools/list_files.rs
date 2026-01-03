@@ -110,7 +110,7 @@ impl ToolHandler for ListFilesTool {
                             }
                         };
 
-                        files.push(process_entry(&entry_path, &metadata))
+                        files.push(process_entry(entry_path, &metadata))
                     }
                     Err(e) => {
                         warn!("Failed to read entry: {}", e);

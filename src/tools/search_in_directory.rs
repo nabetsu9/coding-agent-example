@@ -2,7 +2,7 @@ use anyhow::{Context, Result};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use std::{fs::read_to_string, path::Path};
+use std::path::Path;
 use tracing::{debug, warn};
 
 use crate::anthropic::{Tool, ToolHandler, ToolResult};

@@ -4,7 +4,7 @@ use dotenvy::dotenv;
 mod anthropic;
 mod tools;
 use anthropic::{AnthropicClient, ContentBlock, ToolRegistry};
-use tools::ReadFileTool;
+use tools::{ListFilesTool, ReadFileTool, SearchInDirectoryTool, WriteFileTool};
 
 /// Anthropic Claude CLI Agent
 #[derive(Parser, Debug)]
@@ -58,6 +58,16 @@ async fn main() -> Result<()> {
     // ToolRegistry の作成
     let mut tool_registry = ToolRegistry::new();
     tool_registry.register(ReadFileTool::schema(), ReadFileTool::new());
+    tool_registry.register(ListFilesTool::schema(), ListFilesTool::new());
+    tool_registry.register(
+        SearchInDirectoryTool::schema(),
+        SearchInDirectoryTool::new(),
+    );
+    tool_registry.register(WriteFileTool::schema(), WriteFileTool::new());
+
+    tracing::info!(
+        "Registered tools: readFile, listFiles, searchInDirectory, writeFile" // 🆕 更新
+    );
 
     // ツールを使った会話を実行
     let result = client
