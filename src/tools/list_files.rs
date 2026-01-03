@@ -95,11 +95,29 @@ impl ToolHandler for ListFilesTool {
         let mut files = Vec::new();
 
         if args.recursive {
-            // TODO: タスク3で実装
-            return Ok(ToolResult {
-                content: String::new(),
-                error: Some("再帰モードはまだ実装されていません".to_string()),
-            });
+            // 再帰モード: walkdir を使用
+            use walkdir::WalkDir;
+
+            for entry_result in WalkDir::new(path) {
+                match entry_result {
+                    Ok(entry) => {
+                        let entry_path = entry.path();
+                        let metadata = match entry.metadata() {
+                            Ok(m) => m,
+                            Err(e) => {
+                                warn!("Failed to get metadata for {:?}: {}", entry_path, e);
+                                continue;
+                            }
+                        };
+
+                        files.push(process_entry(&entry_path, &metadata))
+                    }
+                    Err(e) => {
+                        warn!("Failed to read entry: {}", e);
+                        continue;
+                    }
+                }
+            }
         } else {
             // 非再帰モード: std::fs::read_dir を使用
             match std::fs::read_dir(path) {
@@ -116,11 +134,7 @@ impl ToolHandler for ListFilesTool {
                                     }
                                 };
 
-                                files.push(FileInfo {
-                                    path: entry_path.display().to_string(),
-                                    is_dir: metadata.is_dir(),
-                                    size: metadata.len(),
-                                });
+                                files.push(process_entry(&entry_path, &metadata))
                             }
                             Err(e) => {
                                 warn!("Failed to read entry: {}", e);
@@ -148,5 +162,13 @@ impl ToolHandler for ListFilesTool {
             content: result_json,
             error: None,
         })
+    }
+}
+
+fn process_entry(entry_path: &Path, metadata: &std::fs::Metadata) -> FileInfo {
+    FileInfo {
+        path: entry_path.display().to_string(),
+        is_dir: metadata.is_dir(),
+        size: metadata.len(),
     }
 }
