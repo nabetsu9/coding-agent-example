@@ -2,8 +2,11 @@ use anyhow::Result;
 use clap::Parser;
 use dotenvy::dotenv;
 mod anthropic;
+mod config;
+mod system_prompt;
 mod tools;
 use anthropic::{AnthropicClient, ContentBlock, ToolRegistry};
+use system_prompt::build_system_prompt;
 use tools::{EditFileTool, ListFilesTool, ReadFileTool, SearchInDirectoryTool, WriteFileTool};
 
 /// Anthropic Claude CLI Agent
@@ -70,6 +73,9 @@ async fn main() -> Result<()> {
     let tool_names: Vec<&str> = schemas.iter().map(|t| t.name.as_str()).collect();
     tracing::info!("Registered tools: {}", tool_names.join(", "));
 
+    // システムプロンプトの構築
+    let system_prompt = build_system_prompt();
+
     // ツールを使った会話を実行
     let result = client
         .execute_with_tools(
@@ -78,6 +84,7 @@ async fn main() -> Result<()> {
             &args.message,
             &tool_registry,
             args.max_iterations,
+            Some(system_prompt),
         )
         .await?;
 

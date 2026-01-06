@@ -25,6 +25,8 @@ struct MessageRequest {
     messages: Vec<Message>,
     #[serde(skip_serializing_if = "Option::is_none")]
     tools: Option<Vec<Tool>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    system: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -130,6 +132,7 @@ impl AnthropicClient {
         model: &str,
         max_tokens: u32,
         user_message: &str,
+        system: Option<String>,
     ) -> Result<MessageResponse> {
         debug!("Preparing request to Anthropic API");
         debug!(?model, ?max_tokens, "Request parameters");
@@ -137,8 +140,12 @@ impl AnthropicClient {
         let request = MessageRequest {
             model: model.to_string(),
             max_tokens,
-            messages: vec![Message::user_text(user_message)],
+            messages: vec![Message {
+                role: "user".to_string(),
+                content: MessageContent::Text(user_message.to_string()),
+            }],
             tools: None,
+            system,
         };
 
         let response = self
@@ -177,6 +184,7 @@ impl AnthropicClient {
         max_tokens: u32,
         messages: Vec<Message>,
         tools: Option<Vec<Tool>>,
+        system: Option<String>,
     ) -> Result<MessageResponse> {
         debug!("Preparing request to Anthropic API with tools");
         debug!(
@@ -191,6 +199,7 @@ impl AnthropicClient {
             max_tokens,
             messages,
             tools,
+            system,
         };
 
         let response = self
@@ -230,6 +239,7 @@ impl AnthropicClient {
         user_message: &str,
         tool_registry: &ToolRegistry,
         max_iterations: usize,
+        system: Option<String>,
     ) -> Result<ConversationResult> {
         // 会話履歴を初期化
         let mut conversation = vec![Message {
@@ -248,6 +258,7 @@ impl AnthropicClient {
                     max_tokens,
                     conversation.clone(),
                     Some(tool_registry.get_schemas()),
+                    system.clone(),
                 )
                 .await?;
 
